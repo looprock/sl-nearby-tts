@@ -1,0 +1,78 @@
+name: ci
+
+# Most of this suite is platform-neutral, but the Windows job is the point: it
+# runs the framing and subprocess tests on the platform this tool is actually
+# used on, and proves that System.Speech can synthesize there. Neither can be
+# checked from a macOS or Linux development machine.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - run: gofmt -l . | tee /tmp/fmt.txt && test ! -s /tmp/fmt.txt
+        shell: bash
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+  windows-speech:
+    # Confirms a voice is installed and synthesis works. The runner has no audio
+    # device, so render to a file instead of the default output.
+    runs-on: windows-latest
+    steps:
+      - name: Synthesize to a wave file
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $voices = $synth.GetInstalledVoices() | Where-Object { $_.Enabled }
+          if ($voices.Count -eq 0) { throw "no enabled SAPI voices" }
+          $voices | ForEach-Object { Write-Host ("voice: " + $_.VoiceInfo.Name) }
+          $out = Join-Path $env:RUNNER_TEMP "speech.wav"
+          $synth.SetOutputToWaveFile($out)
+          $synth.Speak("Alice says, nearby chat is working.")
+          $synth.Dispose()
+          $len = (Get-Item $out).Length
+          Write-Host "wrote $len bytes"
+          if ($len -lt 1000) { throw "synthesis produced no audio" }
+
+  build:
+    # Every binary is cross-compiled from one host, which is how releases are cut.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          while read -r goos goarch out; do
+            GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
+              go build -trimpath -ldflags="-s -w" -o "dist/$out" .
+            echo "built dist/$out"
+          done <<'TARGETS'
+          windows amd64 sl-nearby-tts.exe
+          windows arm64 sl-nearby-tts-arm64.exe
+          darwin  arm64 sl-nearby-tts-macos-arm64
+          darwin  amd64 sl-nearby-tts-macos-amd64
+          linux   amd64 sl-nearby-tts-linux-amd64
+          TARGETS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/
