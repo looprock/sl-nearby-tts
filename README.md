@@ -1,5 +1,7 @@
 # sl-nearby-tts
 
+[![ci](https://github.com/looprock/sl-nearby-tts/actions/workflows/ci.yml/badge.svg)](https://github.com/looprock/sl-nearby-tts/actions/workflows/ci.yml)
+
 Reads Second Life **nearby chat** out of a running viewer and speaks it.
 
 It runs as a LEAP plugin: the viewer launches it as a child process and streams
@@ -201,5 +203,6 @@ What that does **not** cover, and where it is covered instead:
   in C or Python. The `test` matrix job runs the subprocess test on
   `windows-latest` to confirm it.
 
-If this becomes its own repository, `.github/workflows/ci.yml` needs to sit at
-the repository root to run.
+CI runs on every push to `main` and on pull requests, and can be started by hand
+from the Actions tab. The `build` job uploads all five cross-compiled binaries
+as an artifact, which is the easiest way to hand someone a fresh `.exe`.

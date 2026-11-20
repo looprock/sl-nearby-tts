@@ -1,0 +1,4 @@
+# Keep LF in the working tree on every platform. Git for Windows checks out
+# CRLF by default, and gofmt reports every CRLF file as unformatted, so without
+# this the format check fails on a Windows runner while passing everywhere else.
+* text=auto eol=lf
