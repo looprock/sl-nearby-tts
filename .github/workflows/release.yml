@@ -1,0 +1,86 @@
+name: release
+
+# Pushing a v* tag builds every target and publishes them as release assets, so
+# handing someone a binary is a link rather than a file transfer. Built in CI
+# rather than from a laptop, so the artifacts match the tagged source.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Check before releasing
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          while read -r goos goarch out; do
+            GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build \
+              -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/$out" .
+            echo "built dist/$out"
+          done <<'TARGETS'
+          windows amd64 sl-nearby-tts.exe
+          windows arm64 sl-nearby-tts-arm64.exe
+          darwin  arm64 sl-nearby-tts-macos-arm64
+          darwin  amd64 sl-nearby-tts-macos-amd64
+          linux   amd64 sl-nearby-tts-linux-amd64
+          TARGETS
+          cd dist && sha256sum sl-nearby-tts* > SHA256SUMS && cat SHA256SUMS
+
+      - name: Release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          ### Which file do I want?
+
+          | You are on | Download |
+          |---|---|
+          | Windows (almost everyone) | `sl-nearby-tts.exe` |
+          | Windows on ARM | `sl-nearby-tts-arm64.exe` |
+          | Mac, Apple silicon | `sl-nearby-tts-macos-arm64` |
+          | Mac, Intel | `sl-nearby-tts-macos-amd64` |
+          | Linux | `sl-nearby-tts-linux-amd64` |
+
+          Nothing needs installing alongside it.
+
+          **First run:** open a terminal in the folder you saved it to and run
+          `sl-nearby-tts.exe -selftest`. It speaks a few sample lines without
+          needing Second Life, so you learn whether speech works before touching
+          the viewer. Windows will warn that the file is unsigned the first time:
+          **More info → Run anyway**.
+
+          Then add it to your viewer shortcut, using **forward slashes**:
+
+          ```
+          --leap "C:/Tools/sl-nearby-tts.exe"
+          ```
+
+          Full setup and all the options are in the
+          [README](https://github.com/looprock/sl-nearby-tts#readme).
+          NOTES
+          echo "notes written"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag

@@ -64,7 +64,9 @@ jobs:
           mkdir -p dist
           while read -r goos goarch out; do
             GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
-              go build -trimpath -ldflags="-s -w" -o "dist/$out" .
+              go build -trimpath \
+                -ldflags="-s -w -X main.version=dev-${GITHUB_SHA::7}" \
+                -o "dist/$out" .
             echo "built dist/$out"
           done <<'TARGETS'
           windows amd64 sl-nearby-tts.exe

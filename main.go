@@ -26,7 +26,10 @@ import (
 	"time"
 )
 
-const version = "1.0.0"
+// version is replaced at build time with the release tag:
+//
+//	go build -ldflags="-X main.version=v1.2.3"
+var version = "dev"
 
 // nullUUID is what LLAgent.getID returns before login completes.
 const nullUUID = "00000000-0000-0000-0000-000000000000"

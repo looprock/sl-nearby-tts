@@ -45,7 +45,15 @@ tailing the per-conversation log files, or a bot client on the UDP protocol.
 
 ## Install on Windows
 
-1. Copy `sl-nearby-tts.exe` somewhere stable, e.g. `C:\Tools\`.
+1. Download `sl-nearby-tts.exe` from the
+   [latest release](https://github.com/looprock/sl-nearby-tts/releases/latest)
+   and put it somewhere stable, e.g. `C:\Tools\`. Nothing needs installing
+   alongside it.
+
+   The binary is not code-signed, so the first run brings up "Windows protected
+   your PC": choose **More info → Run anyway**. `SHA256SUMS` on the release page
+   lets you confirm you got the file the build produced.
+
 2. Check that speech works, before involving the viewer:
 
    ```
@@ -205,4 +213,14 @@ What that does **not** cover, and where it is covered instead:
 
 CI runs on every push to `main` and on pull requests, and can be started by hand
 from the Actions tab. The `build` job uploads all five cross-compiled binaries
-as an artifact, which is the easiest way to hand someone a fresh `.exe`.
+as an artifact.
+
+Releases are cut by pushing a tag, which runs the checks again, cross-compiles
+every target, and publishes the binaries with a `SHA256SUMS` file:
+
+```bash
+git tag -a v1.0.1 -m "what changed"
+git push origin v1.0.1
+```
+
+`-version` on a released binary reports its tag; a local build reports `dev`.
