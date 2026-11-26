@@ -288,3 +288,35 @@ func truncate(s string, max int) string {
 	}
 	return strings.TrimSpace(cut) + ", and so on"
 }
+
+// Commands the user can give from inside the viewer. The plugin's process is
+// started once by the viewer and lives as long as it does -- LLAppViewer::init
+// calls LLLeap::create and nothing re-reads LeapCommand afterwards -- so going
+// quiet has to mean falling silent, not exiting.
+const (
+	cmdMute   = "mute"
+	cmdUnmute = "unmute"
+)
+
+// chatCommand recognizes a line as an instruction to this program rather than
+// speech to read out.
+//
+// Only the user's own typing counts, or llOwnerSay from one of their own
+// objects: the viewer shows llOwnerSay to the object's owner and to nobody
+// else, which is what makes a HUD button a private alternative to typing the
+// command in open chat. Either way the line reaches us because
+// LLFloaterIMNearbyChatHandler posts everything the nearby chat window shows to
+// the LLChat pump, our own chat included.
+func chatCommand(c Chat, selfID string) (string, bool) {
+	fromUser := selfID != "" && c.FromID == selfID
+	if !fromUser && c.ChatType != chatOwner {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Message)) {
+	case "tts off":
+		return cmdMute, true
+	case "tts on":
+		return cmdUnmute, true
+	}
+	return "", false
+}

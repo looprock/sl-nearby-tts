@@ -121,3 +121,22 @@ func (q *Queue) Close() error {
 	q.wg.Wait()
 	return q.sp.Close()
 }
+
+// Drop discards lines that are still waiting. The line being spoken right now
+// belongs to the backend and cannot be recalled, so "tts off" goes quiet after
+// at most one more utterance. These are deliberate discards, so they are not
+// counted as falling behind.
+func (q *Queue) Drop() {
+	// After Close the channel is closed, and every receive on it would succeed
+	// immediately -- the default case would never be reached.
+	if q.closed.Load() {
+		return
+	}
+	for {
+		select {
+		case <-q.ch:
+		default:
+			return
+		}
+	}
+}

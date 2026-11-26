@@ -73,6 +73,12 @@ jobs:
           --leap "'C:/Tools/sl-nearby-tts.exe'"
           ```
 
+          **Turning it off without quitting:** type `tts off` in nearby chat to
+          go quiet and `tts on` to start again. The viewer can only launch the
+          plugin at startup, so it stays running and falls silent instead. The
+          README has a nine-line HUD script if you'd rather not say it in open
+          chat.
+
           **Testing on your own?** Your own messages are skipped by default, so
           talking to yourself sounds like nothing is working. Add `-speak-self`
           inside the quotes while you try it out.

@@ -268,3 +268,39 @@ func TestLineSystemNamesNotSuppressed(t *testing.T) {
 		t.Errorf("got %q then %q", first, second)
 	}
 }
+
+// A command has to come from the user: either typed by them, or via llOwnerSay
+// from an object of theirs, which the viewer shows to nobody else.
+func TestChatCommand(t *testing.T) {
+	const self = "0f0f0f0f-0000-0000-0000-00000000beef"
+	for name, tc := range map[string]struct {
+		chat Chat
+		want string
+		ok   bool
+	}{
+		"typed by us": {Chat{Message: "tts off", FromID: self,
+			Source: srcAgent, ChatType: chatNormal}, cmdMute, true},
+		"case and spacing are forgiven": {Chat{Message: "  TTS On  ", FromID: self,
+			Source: srcAgent, ChatType: chatNormal}, cmdUnmute, true},
+		"our own hud via llOwnerSay": {Chat{Message: "tts off", From: "Toggle HUD",
+			Source: srcObject, ChatType: chatOwner}, cmdMute, true},
+		"someone else saying it": {Chat{Message: "tts off", FromID: "aaaa1111-0000-0000-0000-000000000001",
+			Source: srcAgent, ChatType: chatNormal}, "", false},
+		"an object saying it in open chat": {Chat{Message: "tts off", From: "Griefer Cube",
+			Source: srcObject, ChatType: chatNormal}, "", false},
+		"the words inside ordinary chat of ours": {Chat{Message: "the tts off switch is broken",
+			FromID: self, Source: srcAgent, ChatType: chatNormal}, "", false},
+		"a sender with no id": {Chat{Message: "tts off", FromID: "",
+			Source: srcAgent, ChatType: chatNormal}, "", false},
+	} {
+		got, ok := chatCommand(tc.chat, self)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("%s: chatCommand = (%q, %v), want (%q, %v)", name, got, ok, tc.want, tc.ok)
+		}
+	}
+
+	// Before login the viewer has not told us who we are yet.
+	if _, ok := chatCommand(Chat{Message: "tts off", FromID: self, Source: srcAgent}, ""); ok {
+		t.Error("matched a command before our own id was known")
+	}
+}

@@ -200,6 +200,59 @@ Works with the official Second Life viewer and with Firestorm; both ship
 likely but unverified — if the plugin never speaks, search the viewer log for
 `LLLeap`.
 
+## Turning it off and on
+
+The plugin cannot be launched or relaunched while the viewer is running. The
+viewer reads `LeapCommand` once, in `LLAppViewer::init`, calls `LLLeap::create`
+for each entry and never looks again; the LEAP command pump offers only
+`getAPI`, `getAPIs`, `getFeature`, `getFeatures`, `listen`, `newpump`, `ping`
+and `stoplistening`, none of which start a process. Kill the plugin and it stays
+dead until the viewer restarts.
+
+So it stays running and falls silent instead. Type either of these into nearby
+chat:
+
+| You say | What happens |
+|---|---|
+| `tts off` | stops speaking, discards whatever was queued, answers "chat muted" |
+| `tts on` | starts speaking again, answers "chat unmuted" |
+
+Case and surrounding spaces don't matter, and the command itself is never read
+out. It is accepted only from you -- your own chat, or an object you own, as
+below -- so nobody else can mute you by saying it.
+
+Your own chat is not spoken unless you pass `-speak-self`, but commands are
+obeyed either way: the command check runs before that filter.
+
+One line of speech may still finish after `tts off`: the backend already owns
+it and there is no way to take it back.
+
+### Saying it privately
+
+Nearby chat is open chat, so `tts off` is visible to everyone around you. The
+command is also accepted from `llOwnerSay`, which the viewer shows to the
+object's owner and to no one else, so a one-prim HUD gives you a private toggle
+button. Drop this script into a prim and wear it as a HUD:
+
+```lsl
+// Touch to toggle speech. llOwnerSay reaches you and nobody else.
+integer on = TRUE;
+
+default
+{
+    touch_start(integer total)
+    {
+        on = !on;
+        llOwnerSay("tts " + llList2String(["off", "on"], on));
+    }
+}
+```
+
+This works because the viewer posts everything the nearby chat window shows to
+the `LLChat` pump, your own typing and your own objects' `llOwnerSay` included
+(`LLFloaterIMNearbyChatHandler::processChat`, where the `post` is not
+conditional on the sender).
+
 ## Options
 
 | Flag | Default | |

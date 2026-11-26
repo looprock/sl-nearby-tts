@@ -239,6 +239,41 @@ func TestMockViewerSession(t *testing.T) {
 		t.Errorf("spoke %q", got)
 	}
 
+	// "tts off" from our own avatar goes quiet without ending the session, and
+	// the command itself is never spoken.
+	chat(map[string]any{
+		"message": "tts off", "from": "Me Resident",
+		"from_id": UUID(selfID),
+		"source":  int64(srcAgent), "chat_type": int64(chatNormal),
+	})
+	if got := cap.next(t); got != "chat muted" {
+		t.Errorf("spoke %q, want the mute acknowledgement", got)
+	}
+	chat(map[string]any{
+		"message": "nobody should hear this", "from": "Alice Resident",
+		"from_id": UUID("aaaa1111-0000-0000-0000-000000000001"),
+		"source":  int64(srcAgent), "chat_type": int64(chatNormal),
+	})
+	cap.silent(t)
+
+	// A HUD button using llOwnerSay arrives on the same pump and turns it back on.
+	chat(map[string]any{
+		"message": "TTS On", "from": "Toggle HUD",
+		"from_id": UUID("dddd4444-0000-0000-0000-000000000004"),
+		"source":  int64(srcObject), "chat_type": int64(chatOwner),
+	})
+	if got := cap.next(t); got != "chat unmuted" {
+		t.Errorf("spoke %q, want the unmute acknowledgement", got)
+	}
+	chat(map[string]any{
+		"message": "audible again", "from": "Bob Resident",
+		"from_id": UUID("bbbb2222-0000-0000-0000-000000000002"),
+		"source":  int64(srcAgent), "chat_type": int64(chatNormal),
+	})
+	if got := cap.next(t); got != "Bob says, audible again" {
+		t.Errorf("spoke %q", got)
+	}
+
 	// Closing the pipe is how the viewer signals shutdown.
 	viewerSide.Close()
 	select {
@@ -317,3 +352,46 @@ func (b *blockingSpeaker) Speak(s string) error {
 }
 
 func (b *blockingSpeaker) Close() error { return nil }
+
+// "tts off" has to silence what is already queued, not just what comes next.
+func TestQueueDropDiscardsBacklog(t *testing.T) {
+	blocking := &blockingSpeaker{
+		release: make(chan struct{}),
+		entered: make(chan struct{}, 1),
+		spoken:  make(chan string, 16),
+	}
+	q := NewQueue(blocking, 8, func(string, ...any) {})
+	q.Offer("held")
+	select {
+	case <-blocking.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("speaker never started")
+	}
+	q.Offer("backlog one")
+	q.Offer("backlog two")
+
+	q.Drop()
+	q.Offer("chat muted")
+
+	close(blocking.release)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	close(blocking.spoken)
+
+	var got []string
+	for s := range blocking.spoken {
+		got = append(got, s)
+	}
+	// "held" was already inside Speak and cannot be recalled, but the two
+	// queued lines must not be heard after the mute.
+	if len(got) != 2 || got[0] != "held" || got[1] != "chat muted" {
+		t.Errorf("spoke %v, want [held chat muted]", got)
+	}
+	if n := q.Dropped(); n != 0 {
+		t.Errorf("Dropped() = %d, want deliberate discards not counted as falling behind", n)
+	}
+
+	// Dropping after Close must return rather than spin on the closed channel.
+	q.Drop()
+}

@@ -197,6 +197,11 @@ func run(in io.Reader, out io.Writer, n *Narrator, q *Queue, logf func(string, .
 		}
 	}()
 
+	// Muting happens in here rather than by exiting: the viewer launches this
+	// process once and never again, so a plugin that quits is gone until the
+	// viewer restarts.
+	muted := false
+
 	for {
 		f, err := conn.ReadFrame()
 		if err != nil {
@@ -205,6 +210,22 @@ func run(in io.Reader, out io.Writer, n *Narrator, q *Queue, logf func(string, .
 		switch f.Pump {
 		case chatPump:
 			c := parseChat(f.Data)
+			if cmd, ok := chatCommand(c, n.Opts.SelfID); ok {
+				muted = cmd == cmdMute
+				if muted {
+					// A backlog spoken after "tts off" is exactly what was asked
+					// to stop.
+					q.Drop()
+					q.Offer("chat muted")
+				} else {
+					q.Offer("chat unmuted")
+				}
+				logf("in-world command: %s", cmd)
+				continue
+			}
+			if muted {
+				continue
+			}
 			if line, ok := n.Line(c, time.Now()); ok {
 				q.Offer(line)
 			}
