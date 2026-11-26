@@ -11,10 +11,12 @@ package main
 // Reference: indra/llcommon/llleap.cpp (LLLeapImpl) in secondlife/viewer.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -73,7 +75,7 @@ func (c *Conn) ReadFrame() (Frame, error) {
 	if _, err := io.ReadFull(c.r, buf); err != nil {
 		return Frame{}, fmt.Errorf("leap: short read of %d byte frame: %w", n, err)
 	}
-	v, err := Decode(buf)
+	v, err := decodeFrame(buf)
 	if err != nil {
 		return Frame{}, err
 	}
@@ -89,6 +91,29 @@ func (c *Conn) ReadFrame() (Frame, error) {
 		f.Data = map[string]any{}
 	}
 	return f, nil
+}
+
+// decodeFrame decodes one message body, whichever serialization the viewer
+// chose. LLSDSerialize::serialize prepends a "<? LLSD/Binary ?>\n" header
+// naming the format; a body with no header is notation, which is what this
+// program sends and what the protocol was originally documented as.
+func decodeFrame(b []byte) (any, error) {
+	if !bytes.HasPrefix(b, []byte("<?")) {
+		return Decode(b)
+	}
+	nl := bytes.IndexByte(b, '\n')
+	if nl < 0 {
+		return nil, fmt.Errorf("leap: unterminated serialization header")
+	}
+	header, body := strings.ToLower(string(b[:nl])), b[nl+1:]
+	switch {
+	case strings.Contains(header, "binary"):
+		return decodeBinary(body)
+	case strings.Contains(header, "notation"):
+		return Decode(body)
+	default:
+		return nil, fmt.Errorf("leap: unsupported serialization %q", strings.TrimSpace(string(b[:nl])))
+	}
 }
 
 // readLength consumes the decimal byte count and the colon that follows it.

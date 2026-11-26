@@ -9,8 +9,10 @@ chat to it over a pipe. No bot account, no second login, no in-world object, and
 no polling of chat logs. One self-contained binary with no runtime to install.
 
 ```
-SecondLife --leap "C:/Tools/sl-nearby-tts.exe"
+SecondLife --leap "'C:/Tools/sl-nearby-tts.exe'"
 ```
+
+Those inner single quotes are not decoration — see [Quoting the --leap value](#quoting-the---leap-value).
 
 ## How it works
 
@@ -65,30 +67,62 @@ tailing the per-conversation log files, or a bot client on the UDP protocol.
    Properties → Target:
 
    ```
-   "C:\Program Files\Firestorm-Releasex64\Firestorm-Releasex64.exe" --leap "C:/Tools/sl-nearby-tts.exe"
+   "C:\Program Files\Firestorm-Releasex64\Firestorm-Releasex64.exe" --leap "'C:/Tools/sl-nearby-tts.exe'"
    ```
+
+   The single quotes inside the double quotes are required, and so are the
+   forward slashes. Both are explained below.
 
 4. Start the viewer from that shortcut and talk to someone.
 
-### Use forward slashes in the --leap path
+### Quoting the --leap value
 
-The viewer tokenizes the `--leap` string itself, treating **backslash as an
-escape character** (`LLStringUtil::getTokens(plugin, " \t\r\n", "", "\"'", "\\")`
-in `llleap.cpp`). So this silently becomes `C:Toolssl-nearby-tts.exe` and the
-plugin never starts:
+The value gets parsed **twice**, and getting either layer wrong means the plugin
+simply never starts. Both the official viewer and Firestorm behave this way.
 
-```
---leap "C:\Tools\sl-nearby-tts.exe"     WRONG
---leap "C:/Tools/sl-nearby-tts.exe"     right
---leap "C:\\Tools\\sl-nearby-tts.exe"   also right
-```
-
-Options go inside the same quoted string, and because the tokenizer accepts
-either kind of quote, a value with spaces can use single quotes:
+**First layer: it must be LLSD notation, not a bare path.** `--leap` maps to the
+`LeapCommand` setting, which is declared `Type: LLSD`, so the viewer runs the
+value through `LLSDNotationParser` (`LLControlVariable::setValueFromNotation`). A
+bare path is not valid notation, the parse fails, and the code returns without
+setting anything — there is no fallback to treating it as a string. Wrap it in
+single quotes, which is how notation spells a string:
 
 ```
---leap "C:/Tools/sl-nearby-tts.exe -skip-objects -voice 'Microsoft Zira Desktop'"
+--leap "/Tools/sl-nearby-tts"      WRONG, never starts
+--leap "'/Tools/sl-nearby-tts'"    right
 ```
+
+When this layer fails, the viewer log says so:
+
+```
+WARNING LLControlVariable::setValueFromNotation : Failed to parse LLSD notation
+for control 'LeapCommand': /Tools/sl-nearby-tts
+```
+
+**Second layer: backslash is an escape character.** What comes out of the
+notation parser is then split into a command and arguments by
+`LLStringUtil::getTokens(plugin, " \t\r\n", "", "\"'", "\\")` in `llleap.cpp`. So
+a Windows path written with backslashes collapses to
+`C:Toolssl-nearby-tts.exe`:
+
+```
+--leap "'C:\Tools\sl-nearby-tts.exe'"     WRONG, separators eaten
+--leap "'C:/Tools/sl-nearby-tts.exe'"     right
+--leap "'C:\\Tools\\sl-nearby-tts.exe'"   also right
+```
+
+**Options** go inside the notation string. Since that string is delimited by
+single quotes, a value containing spaces uses double quotes:
+
+```
+--leap "'C:/Tools/sl-nearby-tts.exe -skip-objects'"
+--leap "'C:/Tools/sl-nearby-tts.exe -voice \"Microsoft Zira Desktop\"'"
+```
+
+The no-options forms above are confirmed against the viewer's own parsers. If
+nested quoting for an option value fights with your shell or your Windows
+shortcut, put the whole invocation in a one-line `.bat` or shell script and
+point `--leap` at that instead.
 
 ### Viewers
 
@@ -144,8 +178,10 @@ Checks, in the order worth trying:
 
 | Symptom | Check |
 |---|---|
+| `Failed to parse LLSD notation for control 'LeapCommand'` | the `--leap` value is missing its inner single quotes |
 | no speech at all, nothing in the log | path in `--leap` has backslashes |
 | `bad_protocol` or `LLLeap` errors in the log | wrong binary, or it is not a LEAP plugin |
+| log says `subscribed to LLChat`, but nothing is read when I talk | your own chat is skipped by default; add `-speak-self`, or get someone else to say something |
 | starts, but silent | `-selftest`; then `-dry-run` to see whether lines are arriving |
 | wrong voice or too fast | `-list-voices`, then `-voice` / `-rate` |
 | reads its own messages back | `-self <uuid>`; auto-detection needs the viewer to be logged in |

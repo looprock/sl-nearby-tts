@@ -65,13 +65,19 @@ jobs:
           the viewer. Windows will warn that the file is unsigned the first time:
           **More info → Run anyway**.
 
-          Then add it to your viewer shortcut, using **forward slashes**:
+          Then add it to your viewer shortcut. Both the **inner single quotes**
+          and the **forward slashes** are required — the viewer parses this value
+          as LLSD, and without them the plugin never starts at all:
 
           ```
-          --leap "C:/Tools/sl-nearby-tts.exe"
+          --leap "'C:/Tools/sl-nearby-tts.exe'"
           ```
 
-          Full setup and all the options are in the
+          **Testing on your own?** Your own messages are skipped by default, so
+          talking to yourself sounds like nothing is working. Add `-speak-self`
+          inside the quotes while you try it out.
+
+          Full setup, all the options and troubleshooting are in the
           [README](https://github.com/looprock/sl-nearby-tts#readme).
           NOTES
           echo "notes written"

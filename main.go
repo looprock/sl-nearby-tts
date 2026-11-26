@@ -5,11 +5,15 @@ package main
 //
 // The viewer launches it as a LEAP plugin:
 //
-//	SecondLife --leap "C:/Tools/sl-nearby-tts.exe"
+//	SecondLife --leap "'C:/Tools/sl-nearby-tts.exe'"
 //
-// Note the forward slashes. The viewer tokenizes the --leap string with
-// backslash as an escape character, so a Windows path written the usual way
-// loses its separators (see LLStringUtil::getTokens in llleap.cpp).
+// Both the inner single quotes and the forward slashes are required. --leap maps
+// to the LeapCommand setting, which is Type: LLSD, so the value is parsed as
+// LLSD notation and a bare path fails outright with no fallback (see
+// LLControlVariable::setValueFromNotation). What the notation parser returns is
+// then split with backslash as an escape character, so a Windows path written
+// the usual way loses its separators (see LLStringUtil::getTokens in
+// llleap.cpp). Either mistake means this program is never launched at all.
 //
 // stdout belongs to the LEAP protocol and nothing else. Every diagnostic goes
 // to stderr, which the viewer copies into its own log, so a user who cannot be
