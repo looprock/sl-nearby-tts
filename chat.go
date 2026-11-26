@@ -212,8 +212,17 @@ func (n *Narrator) Line(c Chat, now time.Time) (string, bool) {
 			return name + text, true
 		}
 		return name + " " + text, true
-	case c.Source == srcSystem || c.Source == srcRegion || name == "":
-		// No useful speaker to attribute this to.
+	case c.Source == srcSystem || c.Source == srcRegion:
+		// A system line reads as a sentence about its subject, with the name in
+		// "from" and the predicate in "message": "Emilylo Mayako" + "is
+		// online." Joining them with "says" would be wrong, and dropping the
+		// name leaves a bare "is online".
+		if name != "" {
+			return name + " " + text, true
+		}
+		return text, true
+	case name == "":
+		// Nothing to attribute this to.
 		return text, true
 	case !named:
 		// Same voice still holding the floor; naming them again is noise.

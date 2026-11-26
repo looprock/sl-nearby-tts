@@ -221,3 +221,50 @@ func TestTruncateKeepsValidUTF8(t *testing.T) {
 		t.Errorf("produced a replacement character: %q", got)
 	}
 }
+
+// Online/offline notices and other system lines carry the avatar name in
+// "from" and only the predicate in "message", so dropping the name leaves a
+// bare "is online". Reported from a live viewer.
+func TestLineKeepsNameOnSystemLines(t *testing.T) {
+	for name, tc := range map[string]struct {
+		chat Chat
+		want string
+	}{
+		"online notice": {
+			Chat{From: "Emilylo Mayako", Message: "is online.", Source: srcSystem, ChatType: chatNormal},
+			"Emilylo Mayako is online.",
+		},
+		"offline notice": {
+			Chat{From: "Jimmy Evergarden", Message: "is offline.", Source: srcSystem, ChatType: chatNormal},
+			"Jimmy Evergarden is offline.",
+		},
+		"region line with a subject": {
+			Chat{From: "Someone", Message: "has joined.", Source: srcRegion, ChatType: chatNormal},
+			"Someone has joined.",
+		},
+		"system line with no subject": {
+			Chat{From: "", Message: "Teleport completed", Source: srcSystem, ChatType: chatNormal},
+			"Teleport completed",
+		},
+	} {
+		got, ok := NewNarrator(DefaultOptions()).Line(tc.chat, base)
+		if !ok {
+			t.Errorf("%s: dropped, want %q", name, tc.want)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s: got %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+// Two different people going online in a row are two separate notices: the
+// same-speaker suppression must not swallow the second name.
+func TestLineSystemNamesNotSuppressed(t *testing.T) {
+	n := NewNarrator(DefaultOptions())
+	first, _ := n.Line(Chat{From: "Emilylo Mayako", Message: "is online.", Source: srcSystem}, base)
+	second, _ := n.Line(Chat{From: "Jimmy Evergarden", Message: "is online.", Source: srcSystem}, base.Add(time.Second))
+	if first != "Emilylo Mayako is online." || second != "Jimmy Evergarden is online." {
+		t.Errorf("got %q then %q", first, second)
+	}
+}
