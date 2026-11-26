@@ -30,20 +30,42 @@ viewer  --(stdout pipe)-->  sl-nearby-tts  --> SAPI / say / speech-dispatcher
 It also calls `LLAgent.getID` once so it knows your own avatar's UUID and can
 skip reading your own messages back to you.
 
+### The wire format is not what the wiki says
+
+The [LEAP page](https://wiki.secondlife.com/wiki/LLSD_Event_API_Plug-in) states
+that messages are LLSD notation. That is out of date in one direction, and
+getting it wrong means a plugin dies on the handshake:
+
+| Direction | Format |
+|---|---|
+| viewer → plugin | **binary** LLSD, behind a `<? LLSD/Binary ?>` header |
+| plugin → viewer | notation, and only notation |
+
+`LLLeapImpl::wstdin` serializes with `LLSDSerialize::LLSD_BINARY`, citing
+SL-18330 — binary parses far faster than notation for large payloads — and
+`serialize()` prepends that header, so the first byte a plugin ever sees is `<`.
+The viewer's read side still hard-codes `LLSDNotationParser`, so the reply
+direction is unchanged. This program decodes both, dispatching on the header.
+
 ### What it can and cannot hear
 
 | | |
 |---|---|
 | Nearby chat from avatars | yes |
-| Chat from scripted objects, `llOwnerSay`, `llRegionSayTo` | yes |
-| System and region messages | yes |
+| Chat from scripted objects, `llOwnerSay`, `llRegionSayTo` | yes, unless `-skip-objects` |
 | Emotes (`/me waves`) | yes |
-| **IMs and group chat** | **no** |
+| System and region messages, including "X is online" notices | yes, unless `-skip-system` |
+| **Your own messages** | **no, unless `-speak-self`** |
+| **IMs and group chat** | **no, and not possible this way** |
 
 There is no incoming event pump for instant messages. The viewer's `GroupChat`
 event API only sends (`startGroupChat`, `leaveGroupChat`, `sendGroupIM`), so
 LEAP cannot read IMs at all. Reading those aloud needs a different mechanism —
 tailing the per-conversation log files, or a bot client on the UDP protocol.
+
+Your own chat is skipped because hearing your own typing read back is grating in
+normal use. It does mean that **testing alone sounds like nothing is working**:
+add `-speak-self`, or get someone else to say something.
 
 ## Install on Windows
 
@@ -73,9 +95,56 @@ tailing the per-conversation log files, or a bot client on the UDP protocol.
    The single quotes inside the double quotes are required, and so are the
    forward slashes. Both are explained below.
 
-4. Start the viewer from that shortcut and talk to someone.
+4. Start the viewer from that shortcut and talk to someone — or to yourself with
+   `-speak-self`, since your own chat is otherwise skipped.
 
-### Quoting the --leap value
+## Install on macOS and Linux
+
+1. Download the binary for your platform from the
+   [latest release](https://github.com/looprock/sl-nearby-tts/releases/latest)
+   and make it executable:
+
+   ```bash
+   chmod +x ~/sl-nearby-tts-macos-arm64
+   ```
+
+2. **On macOS, clear the quarantine flag.** The binary is neither signed nor
+   notarized, and Gatekeeper kills a quarantined unsigned binary when a GUI app
+   such as the viewer execs it. That failure looks identical to the plugin
+   simply never starting:
+
+   ```bash
+   xattr -d com.apple.quarantine ~/sl-nearby-tts-macos-arm64
+   ```
+
+3. Check speech works before involving the viewer:
+
+   ```bash
+   ~/sl-nearby-tts-macos-arm64 -selftest
+   ~/sl-nearby-tts-macos-arm64 -list-voices
+   ```
+
+4. Launch the viewer with the plugin. The inner single quotes are required:
+
+   ```bash
+   /Applications/Firestorm-Releasex64.app/Contents/MacOS/Firestorm \
+     --leap "'$HOME/sl-nearby-tts-macos-arm64'"
+   ```
+
+   Options go inside the same quotes, not after them:
+
+   ```bash
+   --leap "'$HOME/sl-nearby-tts-macos-arm64 -speak-self -skip-system'"
+   ```
+
+   On Linux, substitute your viewer's own executable; everything else is the
+   same.
+
+> The viewer launches the plugin **once, at startup**. After replacing the
+> binary or changing its options, quit the viewer and start it again — there is
+> no reload.
+
+## Quoting the --leap value
 
 The value gets parsed **twice**, and getting either layer wrong means the plugin
 simply never starts. Both the official viewer and Firestorm behave this way.
@@ -124,7 +193,7 @@ nested quoting for an option value fights with your shell or your Windows
 shortcut, put the whole invocation in a one-line `.bat` or shell script and
 point `--leap` at that instead.
 
-### Viewers
+## Viewers
 
 Works with the official Second Life viewer and with Firestorm; both ship
 `llleap.cpp` and the `leap` command-line option. Other third-party viewers are
@@ -161,6 +230,9 @@ Speaking every event verbatim is unusable, so by default it:
   replays into the chat window on login (that last one would otherwise recite
   the entire window every time);
 - says the speaker's name only when the speaker changes or after a 30s gap;
+- reads a system line as the sentence it already is: the viewer puts the name in
+  `from` and only the predicate in `message`, so `Emilylo Mayako` + `is online.`
+  becomes "Emilylo Mayako is online.", not "Emilylo Mayako says, is online.";
 - drops `Resident` from names and reads a URL as "link";
 - drops identical repeats within 3s, which is what gestures and relays emit;
 - truncates a pasted wall of text instead of letting it block the queue;
@@ -173,6 +245,24 @@ Everything except the protocol itself goes to **stderr**, and the viewer copies
 its plugin's stderr into the viewer log. So a user who cannot be walked through
 a terminal can just send their log; look for `sl-nearby-tts:` lines. `-log
 C:/Tools/sl-tts.log` writes the same diagnostics to a file as well.
+
+The log lives at `%APPDATA%\Firestorm_x64\logs\Firestorm.log` on Windows and
+`~/Library/Application Support/Firestorm/logs/Firestorm.log` on macOS; the
+previous session is in `Firestorm.old` beside it. A healthy startup looks like
+this, and each line rules out a different failure:
+
+```
+processing --leap "'/path/to/sl-nearby-tts'"   the value parsed as LLSD
+launched /path/to/sl-nearby-tts                the process actually started
+version v1.0.2 connected; reply pump "…"       the binary handshake decoded
+subscribed to LLChat                            the viewer confirmed it
+own avatar id 557b8d88-…; own chat skipped      login finished, self detected
+```
+
+`subscribed to LLChat` is printed only when the viewer answers `status: true`,
+so it is the viewer's word rather than an assumption. The `own avatar id` line
+appears once you finish logging in, since `LLAgent.getID` returns a null UUID
+before that and is retried every 15 seconds.
 
 Checks, in the order worth trying:
 
